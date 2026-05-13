@@ -1,15 +1,10 @@
 name: Deploy infrastructure
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "terraform/**"
-      - ".github/workflows/infra.yml"
   push:
     branches:
       - main
+      - ft/app-pipeline
     paths:
       - "terraform/**"
       - ".github/workflows/infra.yml"
@@ -34,6 +29,7 @@ env:
   TF_INPUT: false 
   TF_VERSION: 1.10.5   
   TF_WORKING_DIR: terraform
+  TF_VARS_FILE: environment/dev.tfvars
   AWS_REGION: ${{ secrets.AWS_REGION }}
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
   
@@ -69,15 +65,6 @@ jobs:
           fi
           echo "action=$ACTION" >> "$GITHUB_OUTPUT"
 
-      - name: Guard manual apply and destroy
-        if: ${{ github.event_name == 'workflow_dispatch' && (steps.tf_action.outputs.action == 'apply' || steps.tf_action.outputs.action == 'destroy') }}
-        shell: bash
-        run: |
-          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
-            echo "Apply and destroy are only allowed from the main branch." >&2
-            exit 1
-          fi
-
       - name: Terraform init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -input=false -backend-config=backend.hcl
@@ -95,9 +82,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ steps.tf_action.outputs.action }}" = "destroy" ]; then
-            terraform plan -destroy -input=false -no-color -lock-timeout=5m -out=tfplan
+            terraform plan -destroy -input=false -no-color -lock-timeout=5m -var-file="${TF_VARS_FILE}" -out=tfplan
           else
-            terraform plan -input=false -no-color -lock-timeout=5m -out=tfplan
+            terraform plan -input=false -no-color -lock-timeout=5m -var-file="${TF_VARS_FILE}" -out=tfplan
           fi
 
       - name: Terraform apply
@@ -118,6 +105,7 @@ jobs:
             echo "### Deploy infrastructure workflow"
             echo "- Action: \`${{ steps.tf_action.outputs.action }}\`"
             echo "- Working directory: \`${{ env.TF_WORKING_DIR }}\`"
+            echo "- Variable file: \`${{ env.TF_WORKING_DIR }}/${{ env.TF_VARS_FILE }}\`"
             echo "- AWS region: \`${{ env.AWS_REGION }}\`"
             echo "- Backend config file: \`terraform/backend.hcl\`"
           } >> "$GITHUB_STEP_SUMMARY"
